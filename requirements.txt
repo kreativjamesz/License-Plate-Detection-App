@@ -1,0 +1,8 @@
+opencv-python
+opencv-contrib-python
+mysql-connector-python
+Pillow
+customtkinter
+bcrypt
+watchdog
+tksheet
