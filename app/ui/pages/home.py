@@ -12,7 +12,7 @@ class HomePage(ctk.CTkFrame):
         # Welcome title
         title = ctk.CTkLabel(
             self,
-            text="Welcome to School Attendance System",
+            text="Welcome to License Plate Detector App",
             font=ctk.CTkFont(size=24, weight="bold"),
         )
         title.pack(pady=(50, 20))
@@ -20,7 +20,7 @@ class HomePage(ctk.CTkFrame):
         # Subtitle
         subtitle = ctk.CTkLabel(
             self,
-            text="Secure face-based authentication for students",
+            text="Advanced license plate detection and recognition system",
             font=ctk.CTkFont(size=14),
         )
         subtitle.pack(pady=(0, 40))

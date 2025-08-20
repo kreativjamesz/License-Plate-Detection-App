@@ -4,6 +4,7 @@ import json
 import time
 from app.database.database_service import DatabaseService
 from app.services.pagination import PaginationParams, PaginationResult
+from app.utils.plate_validator import PlateValidator
 
 class LicensePlateService:
     """Service for managing license plate detection records using MySQL"""
@@ -31,25 +32,36 @@ class LicensePlateService:
         try:
             current_time = time.time()
             
-            # Simple plate text - just use detected coordinates or assign a number
+            # Generate or validate plate text
             if not plate_text:
-                # Generate a unique plate number
+                # Generate a valid plate number format
                 conn = DatabaseService.get_connection()
                 cursor = conn.cursor()
                 cursor.execute("SELECT COUNT(*) FROM license_plates")
                 count = cursor.fetchone()[0]
-                plate_text = f"PLATE_{count + 1:04d}"
+                # Generate in valid format: 3 digits + 3 letters
+                plate_text = f"{(count + 1) % 1000:03d} ABC"
                 cursor.close()
                 conn.close()
+            else:
+                # Validate and normalize the plate text
+                is_valid, normalized_plate, plate_type = PlateValidator.validate_and_normalize(plate_text)
+                
+                if not is_valid:
+                    print(f"❌ Invalid plate format rejected: '{plate_text}' (has dashes or invalid format)")
+                    return -1  # Reject invalid plates
+                
+                plate_text = normalized_plate  # Use normalized format
+                print(f"✅ Valid plate detected: '{plate_text}' (type: {plate_type})")
             
-            # Prepare coordinates as JSON
+            # Prepare coordinates as JSON (fix OpenCV int32 serialization)
             coords_json = None
             if coordinates:
                 coords_json = json.dumps({
-                    "x": coordinates[0],
-                    "y": coordinates[1], 
-                    "w": coordinates[2],
-                    "h": coordinates[3]
+                    "x": int(coordinates[0]),  # Convert numpy/OpenCV int32 to Python int
+                    "y": int(coordinates[1]), 
+                    "w": int(coordinates[2]),
+                    "h": int(coordinates[3])
                 })
             
             # Insert into database
@@ -189,21 +201,20 @@ class LicensePlateService:
                 ]
                 table_data.append(row)
             
-            # Create pagination result
-            pagination_result = PaginationResult(
-                page=params.page,
-                limit=params.limit,
-                total_items=total_items,
-                total_pages=total_pages,
-                has_next=params.page < total_pages,
-                has_prev=params.page > 1
+            # Create pagination result using from_params factory method
+            pagination_result = PaginationResult.from_params(
+                data=table_data,
+                total_count=total_items,
+                params=params
             )
             
             return table_data, pagination_result
             
         except Exception as e:
             print(f"❌ Error getting paginated plates: {e}")
-            return [], PaginationResult(1, params.limit, 0, 0, False, False)
+            # Return empty result using from_params factory method
+            empty_params = PaginationParams(page=1, limit=params.limit)
+            return [], PaginationResult.from_params([], 0, empty_params)
     
     def get_table_headers(self) -> List[str]:
         """Get table headers for license plate data"""

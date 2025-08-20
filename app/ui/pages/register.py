@@ -31,7 +31,7 @@ class RegisterPage(ctk.CTkFrame):
         # Subtitle
         subtitle_label = ctk.CTkLabel(
             center_frame, 
-            text="Join the School Face Attendance System", 
+            text="Join the License Plate Detection System", 
             font=ctk.CTkFont(size=14),
             text_color=("gray60", "gray40")
         )

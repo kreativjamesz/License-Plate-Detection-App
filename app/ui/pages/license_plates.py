@@ -8,7 +8,7 @@ from tkinter import messagebox
 from app.ui.widget.gradient_button import GradientButton
 from app.ui.widget.data_table import DataTable
 from app.services.license_plate_service import LicensePlateService
-from app.services.plate.detector import plate_detector
+from app.services.plate.detector import plate_detector, detect_and_read_license_plates
 from app.services.pagination import PaginationParams, PaginationService
 from app.services.detection_logger import detection_logger, start_detection_logging, stop_detection_logging
 
@@ -293,7 +293,7 @@ class LicensePlatesPage(ctk.CTkFrame):
         print("🛑 Camera and logging system stopped")
     
     def _camera_loop(self):
-        """Main camera loop with fast logging system"""
+        """Main camera loop with OCR-enabled detection"""
         
         while self.camera_running and self.camera:
             try:
@@ -304,30 +304,41 @@ class LicensePlatesPage(ctk.CTkFrame):
                 # Resize frame for better performance
                 frame = cv2.resize(frame, (640, 480))
                 
-                # Detect license plates
-                plates = plate_detector.detect_plates(frame)
+                # Detect and read license plates with OCR
+                plate_results = detect_and_read_license_plates(frame)
                 
-                # Draw detection boxes
+                # Draw detection boxes with text
                 display_frame = frame.copy()
-                if plates:
-                    display_frame = plate_detector.draw_plates(display_frame, plates)
+                if plate_results:
+                    display_frame = plate_detector.draw_plates_with_text(display_frame, plate_results)
                     
-                    # FAST LOGGING - No database operations here!
-                    # Take the first/best detection
-                    best_plate = plates[0]
-                    x, y, w, h = best_plate
-                    
-                    # Log to JSON file immediately (super fast)
-                    logged = detection_logger.log_detection(
-                        plate_text="",  # Will auto-generate
-                        confidence=0.8,  # Placeholder confidence
-                        location="Camera",
-                        coordinates=(x, y, w, h)
-                    )
-                    
-                    if logged:
-                        # Update UI to show recent log activity
-                        self.after(0, self._update_detection_stats)
+                    # Process each detected plate
+                    for plate_info in plate_results:
+                        coordinates = plate_info['coordinates']
+                        plate_text = plate_info.get('text')
+                        confidence = plate_info.get('confidence', 0.0)
+                        is_valid = plate_info.get('valid', False)
+                        
+                        # Only log plates with valid OCR text
+                        if is_valid and plate_text:
+                            # Log to JSON file immediately (super fast)
+                            logged = detection_logger.log_detection(
+                                plate_text=plate_text,  # Use actual OCR text
+                                confidence=confidence,   # Use actual OCR confidence
+                                location="Camera",
+                                coordinates=coordinates
+                            )
+                            
+                            if logged:
+                                print(f"🔤 Logged plate with OCR: '{plate_text}' (conf: {confidence:.2f})")
+                                # Update UI to show recent log activity
+                                self.after(0, self._update_detection_stats)
+                            break  # Only process the first valid plate per frame
+                        else:
+                            # Skip plates without valid OCR text
+                            if coordinates:
+                                x, y, w, h = coordinates
+                                print(f"🔍 Plate detected at ({x},{y}) but OCR failed - skipped")
                 
                 # Update camera display in UI thread
                 self.after(0, lambda: self._update_camera_display(display_frame))
@@ -354,12 +365,12 @@ class LicensePlatesPage(ctk.CTkFrame):
             display_size = (400, 300)
             pil_image = pil_image.resize(display_size, Image.Resampling.LANCZOS)
             
-            # Convert to PhotoImage
-            photo = ImageTk.PhotoImage(pil_image)
+            # Convert to CTkImage for better scaling on HighDPI displays
+            ctk_image = ctk.CTkImage(light_image=pil_image, dark_image=pil_image, size=display_size)
             
             # Update label
-            self.camera_label.configure(image=photo, text="")
-            self.camera_label.image = photo  # Keep reference
+            self.camera_label.configure(image=ctk_image, text="")
+            self.camera_label.image = ctk_image  # Keep reference
             
         except Exception as e:
             print(f"❌ Display update error: {e}")

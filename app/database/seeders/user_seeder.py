@@ -26,14 +26,14 @@ class UserSeeder:
                     'role': 'admin'
                 },
                 {
-                    'username': 'teacher1',
-                    'password': 'teacher123',
-                    'role': 'teacher'
+                    'username': 'operator1',
+                    'password': 'operator123',
+                    'role': 'operator'
                 },
                 {
-                    'username': 'staff1',
-                    'password': 'staff123',
-                    'role': 'staff'
+                    'username': 'viewer1',
+                    'password': 'viewer123',
+                    'role': 'viewer'
                 }
             ]
             

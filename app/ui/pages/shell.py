@@ -9,7 +9,7 @@ class Shell(ctk.CTkFrame):
         self.on_nav_change = on_nav_change
 
         # Navbar
-        self.navbar = Navbar(self, title="🎓 School Attendance System")
+        self.navbar = Navbar(self, title="🚗 License Plate Detector System")
         self.navbar.pack(pady=10)
         
         # Body container

@@ -2,16 +2,17 @@ import json
 import os
 import time
 from datetime import datetime
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Optinal
 from threading import Lock, Thread
 import queue
-from app.utils.plate_validator import PlateValidator
+from collections import defaultdict
 
 class DetectionLogger:
     """
-    Fast logging system for license plate detections
-    - Logs detections to JSON file immediately (no database delay)
+    Fast logging system for license plate detections with duplicate prevention
+    - Logs detections to JSON file immediately (no database delay)  
     - Separate thread batches data to database every 10 seconds
+    - Prevents duplicates within batches and across time windows
     """
     
     def __init__(self, log_dir: str = "logs"):
@@ -31,7 +32,7 @@ class DetectionLogger:
         today = datetime.now().strftime("%Y-%m-%d")
         self.current_log_file = os.path.join(self.log_dir, f"detections_{today}.json")
         
-        print(f"ðŸ“ Detection logger initialized: {self.current_log_file}")
+        print(f"í³ Detection logger initialized: {self.current_log_file}")
     
     def can_log_detection(self) -> bool:
         """Check if enough time passed since last detection (3 second rule)"""
@@ -49,30 +50,16 @@ class DetectionLogger:
         
         try:
             current_time = time.time()
-            # Validate and normalize plate text
-            if plate_text:
-                is_valid, normalized_plate, plate_type = PlateValidator.validate_and_normalize(plate_text)
-                if not is_valid:
-                    # Skip invalid plates (has dashes, wrong format, etc.)
-                    print(f"ðŸš« Skipped invalid plate: '{plate_text}' (has dashes or invalid format)")
-                    return False
-                plate_text = normalized_plate
-                print(f"âœ… Logging valid plate: '{plate_text}' (type: {plate_type})")
-            else:
-                # When no plate text provided, skip logging (OCR should provide text)
-                print(f"âš ï¸ No plate text provided - skipping log entry")
-                return False
-            
             detection_data = {
                 "id": f"det_{int(current_time * 1000)}",  # Unique ID based on timestamp
-                "plate_text": plate_text,
+                "plate_text": plate_text or f"PLATE_{int(current_time)}",
                 "confidence": round(confidence, 2),
                 "location": location,
                 "coordinates": {
-                    "x": int(coordinates[0]) if coordinates else 0,  # Convert OpenCV int32 to Python int
-                    "y": int(coordinates[1]) if coordinates else 0,
-                    "w": int(coordinates[2]) if coordinates else 0,
-                    "h": int(coordinates[3]) if coordinates else 0
+                    "x": coordinates[0] if coordinates else 0,
+                    "y": coordinates[1] if coordinates else 0,
+                    "w": coordinates[2] if coordinates else 0,
+                    "h": coordinates[3] if coordinates else 0
                 } if coordinates else None,
                 "timestamp": datetime.now().isoformat(),
                 "unix_time": current_time,
@@ -89,7 +76,7 @@ class DetectionLogger:
             # Update last save time
             self.last_save_time = current_time
             
-            print(f"ðŸ“ Logged: {detection_data['plate_text']} (Queue: {self.logs_queue.qsize()})")
+            print(f"í³ Logged: {detection_data['plate_text']} (Queue: {self.logs_queue.qsize()})")
             return True
             
         except Exception as e:
@@ -104,23 +91,8 @@ class DetectionLogger:
                 if os.path.exists(self.current_log_file):
                     with open(self.current_log_file, 'r', encoding='utf-8') as f:
                         try:
-                            content = f.read().strip()
-                            if content:
-                                log_data = json.loads(content)
-                                # Ensure detections key exists
-                                if 'detections' not in log_data:
-                                    log_data['detections'] = []
-                            else:
-                                log_data = {"detections": []}
-                        except json.JSONDecodeError as e:
-                            print(f"âš ï¸ JSON decode error in {self.current_log_file}: {e}")
-                            # Backup corrupted file and start fresh
-                            backup_file = f"{self.current_log_file}.backup_{int(time.time())}"
-                            try:
-                                os.rename(self.current_log_file, backup_file)
-                                print(f"ðŸ“¦ Backed up corrupted file to: {backup_file}")
-                            except:
-                                pass
+                            log_data = json.load(f)
+                        except json.JSONDecodeError:
                             log_data = {"detections": []}
                 else:
                     log_data = {"detections": []}
@@ -143,14 +115,14 @@ class DetectionLogger:
         self.running = True
         self.batch_thread = Thread(target=self._batch_processor_loop, daemon=True)
         self.batch_thread.start()
-        print(f"ðŸš€ Started batch processor (every {self.batch_interval} seconds)")
+        print(f"íº€ Started batch processor (every {self.batch_interval} seconds)")
     
     def stop_batch_processor(self):
         """Stop background batch processor"""
         self.running = False
         if self.batch_thread:
             self.batch_thread.join(timeout=2)
-        print("ðŸ›‘ Stopped batch processor")
+        print("í»‘ Stopped batch processor")
     
     def _batch_processor_loop(self):
         """Background loop that processes queued detections to database every 10 seconds"""
@@ -173,7 +145,7 @@ class DetectionLogger:
                 time.sleep(1)
     
     def _process_batch_to_database(self):
-        """Process all queued detections to database"""
+        """Process all queued detections to database with duplicate prevention"""
         if self.logs_queue.empty():
             return
         
@@ -190,7 +162,15 @@ class DetectionLogger:
         if not batch_detections:
             return
         
-        print(f"ðŸ’¾ Processing batch of {len(batch_detections)} detections to database...")
+        print(f"í²¾ Processing batch of {len(batch_detections)} detections...")
+        
+        # GROUP BY PLATE TEXT - Duplicate prevention within batch
+        plate_groups = defaultdict(list)
+        for detection in batch_detections:
+            plate_text = detection['plate_text']
+            plate_groups[plate_text].append(detection)
+        
+        print(f"í´„ Grouped into {len(plate_groups)} unique plates")
         
         try:
             # Import here to avoid circular imports
@@ -198,28 +178,43 @@ class DetectionLogger:
             
             service = LicensePlateService()
             saved_count = 0
+            updated_count = 0
             
-            for detection in batch_detections:
-                coords = None
-                if detection.get('coordinates'):
-                    c = detection['coordinates']
-                    coords = (int(c['x']), int(c['y']), int(c['w']), int(c['h']))  # Ensure ints
+            # Process each unique plate
+            for plate_text, detections in plate_groups.items():
+                # Find the best detection (highest confidence) from this batch
+                best_detection = max(detections, key=lambda x: x['confidence'])
                 
-                # Save to database (bypass the time check since we're batching)
-                plate_id = service.add_detection(
-                    plate_text=detection['plate_text'],
-                    confidence=detection['confidence'],
-                    location=detection['location'],
+                coords = None
+                if best_detection.get('coordinates'):
+                    c = best_detection['coordinates']
+                    coords = (c['x'], c['y'], c['w'], c['h'])
+                
+                # Use the new duplicate-aware method
+                plate_id, is_new = service.add_or_update_detection(
+                    plate_text=best_detection['plate_text'],
+                    confidence=best_detection['confidence'],
+                    location=best_detection['location'],
                     coordinates=coords
                 )
                 
                 if plate_id > 0:
-                    saved_count += 1
-                    # Mark as processed in log file
-                    detection['processed'] = True
-                    detection['database_id'] = plate_id
+                    if is_new:
+                        saved_count += 1
+                        action = "Created"
+                    else:
+                        updated_count += 1
+                        action = "Updated"
+                    
+                    # Mark all detections of this plate as processed
+                    for detection in detections:
+                        detection['processed'] = True
+                        detection['database_id'] = plate_id
+                        detection['action'] = action.lower()
+                    
+                    print(f"âœ… {action} plate: {plate_text} (ID: {plate_id}) from {len(detections)} detections")
             
-            print(f"âœ… Batch processed: {saved_count}/{len(batch_detections)} saved to database")
+            print(f"âœ… Batch completed: {saved_count} new, {updated_count} updated, {len(plate_groups)} unique plates")
             
             # Update log file with processed flags
             self._update_log_file_processed_flags(batch_detections)
@@ -238,21 +233,18 @@ class DetectionLogger:
                     return
                 
                 with open(self.current_log_file, 'r', encoding='utf-8') as f:
-                    content = f.read().strip()
-                    if content:
-                        log_data = json.loads(content)
-                    else:
-                        return  # File is empty, nothing to update
+                    log_data = json.load(f)
                 
                 # Update processed flags
                 processed_ids = {det['id'] for det in processed_detections}
                 for detection in log_data.get('detections', []):
                     if detection['id'] in processed_ids:
                         detection['processed'] = True
-                        # Find matching detection for database_id
+                        # Find matching detection for database_id and action
                         for proc_det in processed_detections:
                             if proc_det['id'] == detection['id']:
                                 detection['database_id'] = proc_det.get('database_id')
+                                detection['action'] = proc_det.get('action', 'processed')
                                 break
                 
                 # Write back
@@ -269,18 +261,40 @@ class DetectionLogger:
                 return 0
                 
             with open(self.current_log_file, 'r', encoding='utf-8') as f:
-                content = f.read().strip()
-                if not content:
-                    return 0
-                log_data = json.loads(content)
+                log_data = json.load(f)
                 return len(log_data.get('detections', []))
                 
-        except json.JSONDecodeError as e:
-            print(f"âš ï¸ JSON decode error reading log count: {e}")
-            return 0
         except Exception as e:
             print(f"âŒ Error reading log count: {e}")
             return 0
+    
+    def get_processing_stats(self) -> Dict[str, int]:
+        """Get statistics about processed vs unprocessed detections"""
+        try:
+            if not os.path.exists(self.current_log_file):
+                return {'total': 0, 'processed': 0, 'pending': 0, 'created': 0, 'updated': 0}
+                
+            with open(self.current_log_file, 'r', encoding='utf-8') as f:
+                log_data = json.load(f)
+                detections = log_data.get('detections', [])
+                
+                total = len(detections)
+                processed = len([d for d in detections if d.get('processed', False)])
+                created = len([d for d in detections if d.get('action') == 'created'])
+                updated = len([d for d in detections if d.get('action') == 'updated'])
+                pending = total - processed
+                
+                return {
+                    'total': total,
+                    'processed': processed,
+                    'pending': pending,
+                    'created': created,
+                    'updated': updated
+                }
+                
+        except Exception as e:
+            print(f"âŒ Error reading processing stats: {e}")
+            return {'total': 0, 'processed': 0, 'pending': 0, 'created': 0, 'updated': 0}
     
     def get_recent_detections(self, limit: int = 5) -> List[Dict]:
         """Get recent detections from log file"""

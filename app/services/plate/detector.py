@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 from typing import List, Tuple, Optional, Dict
 import os
+from app.services.ocr_service import extract_plate_text, is_ocr_available
 
 class PlateDetector:
     """License plate detector using multiple haarcascade models"""
@@ -75,33 +76,81 @@ class PlateDetector:
         # Remove duplicate detections
         filtered_plates = self._filter_overlapping_plates(all_plates)
         
+        # Add additional detection for modern bordered plates
+        bordered_plates = self._detect_bordered_plates(gray)
+        all_plates.extend(bordered_plates)
+        
+        # Final filtering with all detections
+        filtered_plates = self._filter_overlapping_plates(all_plates)
+        
         return filtered_plates
     
     def _detect_with_model(self, gray_frame: np.ndarray, cascade: cv2.CascadeClassifier, 
                           model_name: str) -> List[Tuple[int, int, int, int]]:
         """Detect plates using a specific cascade model"""
         try:
-            # Different parameters for different models
+            # Try multiple parameter sets for better detection of modern plates
+            parameter_sets = []
+            
             if "russian" in model_name:
-                # Parameters tuned for Russian license plates
+                # Multiple parameter sets for Russian models
+                parameter_sets = [
+                    # Standard parameters
+                    {
+                        'scaleFactor': 1.1,
+                        'minNeighbors': 4,
+                        'minSize': (50, 15),
+                        'maxSize': (300, 100)
+                    },
+                    # More sensitive for modern plates with borders
+                    {
+                        'scaleFactor': 1.05,
+                        'minNeighbors': 3,
+                        'minSize': (80, 25),  # Larger minimum for bordered plates
+                        'maxSize': (350, 120)
+                    },
+                    # Even more sensitive
+                    {
+                        'scaleFactor': 1.08,
+                        'minNeighbors': 2,
+                        'minSize': (60, 20),
+                        'maxSize': (400, 150)
+                    }
+                ]
+            else:
+                # Default parameter sets
+                parameter_sets = [
+                    {
+                        'scaleFactor': 1.2,
+                        'minNeighbors': 3,
+                        'minSize': (40, 15),
+                        'maxSize': (400, 120)
+                    }
+                ]
+            
+            all_detections = []
+            
+            # Try each parameter set
+            for params in parameter_sets:
                 plates = cascade.detectMultiScale(
                     gray_frame,
-                    scaleFactor=1.1,
-                    minNeighbors=4,
-                    minSize=(50, 15),   # License plates are wider than tall
-                    maxSize=(300, 100),
+                    scaleFactor=params['scaleFactor'],
+                    minNeighbors=params['minNeighbors'],
+                    minSize=params['minSize'],
+                    maxSize=params['maxSize'],
                     flags=cv2.CASCADE_SCALE_IMAGE
+                )
+                all_detections.extend(plates)
+            
+            # Remove duplicates from multiple parameter sets
+            if all_detections:
+                # Convert to list of tuples for consistency
+                plates = self._filter_overlapping_plates(
+                    [(int(x), int(y), int(w), int(h)) for x, y, w, h in all_detections],
+                    overlap_threshold=0.5
                 )
             else:
-                # Default parameters
-                plates = cascade.detectMultiScale(
-                    gray_frame,
-                    scaleFactor=1.2,
-                    minNeighbors=3,
-                    minSize=(40, 15),
-                    maxSize=(400, 120),
-                    flags=cv2.CASCADE_SCALE_IMAGE
-                )
+                plates = []
             
             # Add model name info to each detection
             plates_with_info = []
@@ -178,6 +227,51 @@ class PlateDetector:
         
         return intersection / union if union > 0 else 0.0
     
+    def detect_and_read_plates(self, frame: np.ndarray, model_name: str = None) -> List[Dict]:
+        """
+        Detect license plates and extract text using OCR
+        
+        Returns:
+            List of dictionaries with detection info:
+            [{
+                'coordinates': (x, y, w, h),
+                'text': 'ABC 123',
+                'confidence': 0.95,
+                'valid': True
+            }]
+        """
+        # First detect plate regions
+        plates = self.detect_plates(frame, model_name)
+        
+        results = []
+        for plate_coords in plates:
+            result = {
+                'coordinates': plate_coords,
+                'text': None,
+                'confidence': 0.0,
+                'valid': False
+            }
+            
+            # Try to extract text using OCR if available
+            if is_ocr_available():
+                try:
+                    text, confidence = extract_plate_text(frame, plate_coords)
+                    if text:
+                        result['text'] = text
+                        result['confidence'] = confidence
+                        result['valid'] = True
+                        print(f"🔤 Plate detected and read: '{text}' (conf: {confidence:.2f})")
+                    else:
+                        print(f"🔍 Plate detected but text unreadable")
+                except Exception as e:
+                    print(f"❌ OCR error: {e}")
+            else:
+                print(f"⚠️ OCR not available - only detection")
+            
+            results.append(result)
+        
+        return results
+    
     def draw_plates(self, frame: np.ndarray, plates: List[Tuple[int, int, int, int]], 
                    color: Tuple[int, int, int] = (0, 255, 0), thickness: int = 2) -> np.ndarray:
         """Draw bounding boxes around detected plates"""
@@ -196,6 +290,43 @@ class PlateDetector:
                          (x, y - label_size[1] - 10), 
                          (x + label_size[0], y), 
                          color, -1)
+            
+            # Draw label text
+            cv2.putText(result_frame, label, (x, y - 5), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        
+        return result_frame
+    
+    def draw_plates_with_text(self, frame: np.ndarray, plate_results: List[Dict], 
+                             color: Tuple[int, int, int] = (0, 255, 0), thickness: int = 2) -> np.ndarray:
+        """Draw bounding boxes around detected plates with OCR text"""
+        result_frame = frame.copy()
+        
+        for i, plate_info in enumerate(plate_results):
+            x, y, w, h = plate_info['coordinates']
+            text = plate_info.get('text', '')
+            confidence = plate_info.get('confidence', 0.0)
+            valid = plate_info.get('valid', False)
+            
+            # Choose color based on validity
+            box_color = (0, 255, 0) if valid else (0, 165, 255)  # Green if valid, orange if not
+            
+            # Draw rectangle
+            cv2.rectangle(result_frame, (x, y), (x + w, y + h), box_color, thickness)
+            
+            # Prepare label
+            if text and valid:
+                label = f"{text} ({confidence:.2f})"
+            else:
+                label = f"Plate {i+1}"
+            
+            label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
+            
+            # Draw label background
+            cv2.rectangle(result_frame, 
+                         (x, y - label_size[1] - 10), 
+                         (x + label_size[0], y), 
+                         box_color, -1)
             
             # Draw label text
             cv2.putText(result_frame, label, (x, y - 5), 
@@ -222,6 +353,62 @@ class PlateDetector:
         roi = frame[y_start:y_end, x_start:x_end]
         
         return roi if roi.size > 0 else None
+    
+    def _detect_bordered_plates(self, gray_frame: np.ndarray) -> List[Tuple[int, int, int, int]]:
+        """
+        Detect modern Philippine plates with individual character borders
+        Uses contour detection to find rectangular regions
+        """
+        try:
+            # Edge detection to find borders
+            edges = cv2.Canny(gray_frame, 50, 150, apertureSize=3)
+            
+            # Morphological operations to connect character borders
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+            edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
+            
+            # Find contours
+            contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            plate_candidates = []
+            
+            for contour in contours:
+                # Get bounding rectangle
+                x, y, w, h = cv2.boundingRect(contour)
+                
+                # Filter by size and aspect ratio for license plates
+                aspect_ratio = w / h if h > 0 else 0
+                area = w * h
+                
+                # Philippine license plate characteristics:
+                # - Wider than tall (aspect ratio 2:1 to 5:1)
+                # - Reasonable size
+                if (2.0 <= aspect_ratio <= 5.0 and 
+                    1000 <= area <= 50000 and
+                    w >= 80 and h >= 20):
+                    
+                    # Additional checks for plate-like characteristics
+                    roi = gray_frame[y:y+h, x:x+w]
+                    if roi.size > 0:
+                        # Check for text-like patterns (multiple vertical edges)
+                        roi_edges = cv2.Canny(roi, 50, 150)
+                        vertical_edges = cv2.countNonZero(roi_edges)
+                        
+                        # Should have sufficient detail for text
+                        if vertical_edges > (w * h * 0.05):  # At least 5% edge pixels
+                            plate_candidates.append((x, y, w, h))
+            
+            # Sort by confidence (area) and return top candidates
+            plate_candidates.sort(key=lambda p: p[2] * p[3], reverse=True)
+            
+            if plate_candidates:
+                print(f"🔍 bordered_detection: Found {len(plate_candidates)} potential bordered plates")
+            
+            return plate_candidates[:3]  # Return top 3 candidates
+            
+        except Exception as e:
+            print(f"❌ Error in bordered plate detection: {e}")
+            return []
 
 # Global detector instance
 plate_detector = PlateDetector()
@@ -230,6 +417,14 @@ def detect_license_plates(frame: np.ndarray, model_name: str = None) -> List[Tup
     """Convenience function for detecting license plates"""
     return plate_detector.detect_plates(frame, model_name)
 
+def detect_and_read_license_plates(frame: np.ndarray, model_name: str = None) -> List[Dict]:
+    """Convenience function for detecting and reading license plates with OCR"""
+    return plate_detector.detect_and_read_plates(frame, model_name)
+
 def draw_detected_plates(frame: np.ndarray, plates: List[Tuple[int, int, int, int]]) -> np.ndarray:
     """Convenience function for drawing detected plates"""
     return plate_detector.draw_plates(frame, plates)
+
+def draw_plates_with_ocr(frame: np.ndarray, plate_results: List[Dict]) -> np.ndarray:
+    """Convenience function for drawing detected plates with OCR text"""
+    return plate_detector.draw_plates_with_text(frame, plate_results)

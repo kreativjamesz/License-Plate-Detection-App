@@ -202,23 +202,23 @@ class PaginationService:
 
 # Example usage and defaults
 PAGINATION_DEFAULTS = {
-    "students": {
+    "license_plates": {
         "limit": 25,
-        "sort_by": "student_number",
-        "sort_order": "ASC",
-        "search_columns": ["first_name", "last_name", "student_number", "section"]
-    },
-    "attendance": {
-        "limit": 50,
-        "sort_by": "timestamp",
+        "sort_by": "last_seen",
         "sort_order": "DESC",
-        "search_columns": ["student_number", "first_name", "last_name"]
+        "search_columns": ["plate_text", "latest_location", "status"]
+    },
+    "detection_sessions": {
+        "limit": 50,
+        "sort_by": "start_time",
+        "sort_order": "DESC",
+        "search_columns": ["session_name", "status"]
     },
     "users": {
         "limit": 20,
         "sort_by": "username",
         "sort_order": "ASC",
-        "search_columns": ["username", "email", "first_name", "last_name"]
+        "search_columns": ["username", "role"]
     }
 }
 

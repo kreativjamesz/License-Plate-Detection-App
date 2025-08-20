@@ -1,7 +1,7 @@
 import customtkinter as ctk
 
 class Navbar(ctk.CTkFrame):
-    def __init__(self, master, title="School App"):
+    def __init__(self, master, title="License Plate Detector"):
         super().__init__(master, height=60, corner_radius=10)
         self.pack(fill="x", padx=10, pady=(0,10))
         

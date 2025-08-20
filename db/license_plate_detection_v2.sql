@@ -67,21 +67,21 @@ INSERT INTO users (username, password, role) VALUES
 ('operator1', 'operator123', 'operator'),
 ('viewer1', 'viewer123', 'viewer');
 
--- Insert sample license plate detections with duplicate prevention data
+-- Insert sample license plate detections with duplicate prevention data (valid format only)
 INSERT INTO license_plates (
     plate_text, confidence, best_confidence, location, coordinates, best_coordinates, 
     status, detection_count, first_location, latest_location, last_seen
 ) VALUES
-('518-UOZ', 0.98, 0.98, 'Test Camera', '{"x": 145, "y": 190, "w": 125, "h": 42}', '{"x": 145, "y": 190, "w": 125, "h": 42}', 'verified', 1, 'Test Camera', 'Test Camera', NOW()),
-('518UOZ', 0.98, 0.98, 'Test Camera', '{"x": 145, "y": 190, "w": 125, "h": 42}', '{"x": 145, "y": 190, "w": 125, "h": 42}', 'verified', 1, 'Test Camera', 'Test Camera', NOW()),
-('ABC-1234', 0.95, 0.97, 'Main Camera', '{"x": 150, "y": 200, "w": 120, "h": 40}', '{"x": 148, "y": 198, "w": 122, "h": 42}', 'verified', 5, 'Main Camera', 'Main Camera', NOW() - INTERVAL 5 MINUTE),
-('XYZ-5678', 0.87, 0.91, 'Main Camera', '{"x": 180, "y": 250, "w": 115, "h": 38}', '{"x": 178, "y": 248, "w": 117, "h": 40}', 'detected', 3, 'Main Camera', 'Side Camera', NOW() - INTERVAL 15 MINUTE),
-('DEF-9012', 0.92, 0.94, 'Main Camera', '{"x": 200, "y": 180, "w": 125, "h": 42}', '{"x": 198, "y": 182, "w": 127, "h": 44}', 'detected', 2, 'Main Camera', 'Main Camera', NOW() - INTERVAL 8 MINUTE),
-('GHI-3456', 0.78, 0.82, 'Main Camera', '{"x": 160, "y": 220, "w": 118, "h": 39}', '{"x": 162, "y": 218, "w": 120, "h": 41}', 'flagged', 4, 'Main Camera', 'Side Camera', NOW() - INTERVAL 12 MINUTE),
-('JKL-7890', 0.89, 0.93, 'Main Camera', '{"x": 170, "y": 210, "w": 122, "h": 41}', '{"x": 168, "y": 208, "w": 124, "h": 43}', 'detected', 7, 'Main Camera', 'Main Camera', NOW() - INTERVAL 3 MINUTE),
-('MNO-2468', 0.85, 0.88, 'Side Camera', '{"x": 190, "y": 240, "w": 119, "h": 37}', '{"x": 192, "y": 238, "w": 121, "h": 39}', 'detected', 2, 'Side Camera', 'Side Camera', NOW() - INTERVAL 20 MINUTE),
-('PQR-1357', 0.91, 0.95, 'Main Camera', '{"x": 175, "y": 195, "w": 123, "h": 40}', '{"x": 173, "y": 193, "w": 125, "h": 42}', 'verified', 3, 'Main Camera', 'Main Camera', NOW() - INTERVAL 7 MINUTE),
-('STU-9753', 0.83, 0.86, 'Side Camera', '{"x": 165, "y": 225, "w": 116, "h": 38}', '{"x": 167, "y": 223, "w": 118, "h": 40}', 'detected', 1, 'Side Camera', 'Side Camera', NOW() - INTERVAL 25 MINUTE);
+('518 UOZ', 0.98, 0.98, 'Test Camera', '{"x": 145, "y": 190, "w": 125, "h": 42}', '{"x": 145, "y": 190, "w": 125, "h": 42}', 'verified', 1, 'Test Camera', 'Test Camera', NOW()),
+('123 ABC', 0.95, 0.97, 'Main Camera', '{"x": 150, "y": 200, "w": 120, "h": 40}', '{"x": 148, "y": 198, "w": 122, "h": 42}', 'verified', 5, 'Main Camera', 'Main Camera', NOW() - INTERVAL 5 MINUTE),
+('567 XYZ', 0.87, 0.91, 'Main Camera', '{"x": 180, "y": 250, "w": 115, "h": 38}', '{"x": 178, "y": 248, "w": 117, "h": 40}', 'detected', 3, 'Main Camera', 'Side Camera', NOW() - INTERVAL 15 MINUTE),
+('901 DEF', 0.92, 0.94, 'Main Camera', '{"x": 200, "y": 180, "w": 125, "h": 42}', '{"x": 198, "y": 182, "w": 127, "h": 44}', 'detected', 2, 'Main Camera', 'Main Camera', NOW() - INTERVAL 8 MINUTE),
+('345 GHI', 0.78, 0.82, 'Main Camera', '{"x": 160, "y": 220, "w": 118, "h": 39}', '{"x": 162, "y": 218, "w": 120, "h": 41}', 'flagged', 4, 'Main Camera', 'Side Camera', NOW() - INTERVAL 12 MINUTE),
+('789 JKL', 0.89, 0.93, 'Main Camera', '{"x": 170, "y": 210, "w": 122, "h": 41}', '{"x": 168, "y": 208, "w": 124, "h": 43}', 'detected', 7, 'Main Camera', 'Main Camera', NOW() - INTERVAL 3 MINUTE),
+('246 MNO', 0.85, 0.88, 'Side Camera', '{"x": 190, "y": 240, "w": 119, "h": 37}', '{"x": 192, "y": 238, "w": 121, "h": 39}', 'detected', 2, 'Side Camera', 'Side Camera', NOW() - INTERVAL 20 MINUTE),
+('135 PQR', 0.91, 0.95, 'Main Camera', '{"x": 175, "y": 195, "w": 123, "h": 40}', '{"x": 173, "y": 193, "w": 125, "h": 42}', 'verified', 3, 'Main Camera', 'Main Camera', NOW() - INTERVAL 7 MINUTE),
+('975 STU', 0.83, 0.86, 'Side Camera', '{"x": 165, "y": 225, "w": 116, "h": 38}', '{"x": 167, "y": 223, "w": 118, "h": 40}', 'detected', 1, 'Side Camera', 'Side Camera', NOW() - INTERVAL 25 MINUTE),
+('864 VWX', 0.88, 0.91, 'Main Camera', '{"x": 185, "y": 205, "w": 121, "h": 39}', '{"x": 183, "y": 203, "w": 123, "h": 41}', 'detected', 1, 'Main Camera', 'Main Camera', NOW() - INTERVAL 30 MINUTE);
 
 -- Create indexes for better performance and duplicate prevention
 CREATE INDEX idx_plates_detected_at ON license_plates(detected_at);
